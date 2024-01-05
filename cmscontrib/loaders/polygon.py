@@ -43,8 +43,9 @@ from cms import config
 from cms.db import Contest, User, Task, Statement, Dataset, Manager, Testcase
 from cmscommon.crypto import build_password
 from cmscontrib import touch
-
 from .base_loader import ContestLoader, TaskLoader, UserLoader
+from cmscommon.constants import \
+    SCORE_MODE_MAX, SCORE_MODE_MAX_SUBTASK, SCORE_MODE_MAX_TOKENED_LAST
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ class PolygonTaskLoader(TaskLoader):
         root = tree.getroot()
 
         args["name"] = name
-        args["title"] = str(root.find('names').find("name").attrib['value'])
+        args["title"] = name
 
         if get_statement:
             args["statements"] = {}
@@ -167,14 +168,15 @@ class PolygonTaskLoader(TaskLoader):
                                                 ('.py', 'r', imp.PY_SOURCE))
         if task_cms_conf is not None and hasattr(task_cms_conf, "general"):
             args.update(task_cms_conf.general)
-
+        args["score_mode"] = SCORE_MODE_MAX_SUBTASK
         task = Task(**args)
 
         judging = root.find('judging')
         testset = None
         for testset in judging:
             testset_name = testset.attrib["name"]
-
+            if testset_name != "tests":
+                continue
             args = {}
             args["task"] = task
             args["description"] = str(testset_name)
@@ -234,7 +236,18 @@ class PolygonTaskLoader(TaskLoader):
                 input_value = total_value / n_input
             args["score_type_parameters"] = input_value
 
+            if testset.find("groups"):
+                args["score_type"] = "GroupMin"
+                groups = testset.find("groups")
+                args["score_type_parameters"] = []
+                for group in groups:
+                    name = group.attrib["name"]
+                    points = int(group.attrib.get("points",0))
+                    args["score_type_parameters"].append([points, "^%s.*" % (name,)])
+
             args["testcases"] = {}
+
+            tests = testset.find("tests")
 
             for i in range(testcases):
                 infile = os.path.join(self.path, testset_name,
@@ -251,6 +264,10 @@ class PolygonTaskLoader(TaskLoader):
                     outfile,
                     "Output %d for task %s" % (i, name))
                 testcase = Testcase("%03d" % (i, ), False,
+                                    input_digest, output_digest)
+                if tests[i].attrib.get("group"):
+                    group = tests[i].attrib.get("group")
+                    testcase = Testcase("%s_%03d" % (group,i), False,
                                     input_digest, output_digest)
                 testcase.public = True
                 args["testcases"][testcase.codename] = testcase
