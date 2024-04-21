@@ -242,8 +242,14 @@ class PolygonTaskLoader(TaskLoader):
                 args["score_type_parameters"] = []
                 for group in groups:
                     name = group.attrib["name"]
-                    points = int(group.attrib.get("points",0))
-                    args["score_type_parameters"].append([points, "^%s.*" % (name,)])
+                    points = int(float(group.attrib.get("points",0)))
+                    dependencies = group.find("dependencies")
+                    if dependencies:
+                        reg = "(^%s.*)" % (name,)
+                        for dependency in dependencies:
+                            reg += "|(^%s.*)" % dependency.get("group")
+                        args["score_type_parameters"].append([points, reg])
+                    else: args["score_type_parameters"].append([points, "^%s.*" % (name,)])
 
             args["testcases"] = {}
 
